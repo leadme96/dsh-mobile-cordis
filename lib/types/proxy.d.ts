@@ -39,7 +39,7 @@ export declare class ReverseProxy {
      */
     private handleWebSocket;
     /**
-     * Inject __DSH_TRANSPORT__ shim into HTML.
+     * Inject __DSH_TRANSPORT__ shim and mobile UI adaptation into HTML.
      */
     private injectTransportShim;
 }

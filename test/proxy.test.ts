@@ -209,6 +209,79 @@ describe('proxy', () => {
       const response = await makeRequest(`http://127.0.0.1:${proxyPort}/`);
       expect(response.body).not.toContain('__DSH_TRANSPORT__');
     });
+
+    it('should inject mobile UI adaptation CSS and JS into HTML responses', async () => {
+      const htmlServer = createServer((_req, res) => {
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end('<html><head></head><body>Test</body></html>');
+      });
+
+      await new Promise<void>((resolve) => {
+        htmlServer.listen(0, '127.0.0.1', () => resolve());
+      });
+      const htmlPort = (htmlServer.address() as any).port;
+
+      const config: ProxyConfig = {
+        port: 0,
+        upstreamHost: '127.0.0.1',
+        upstreamPort: htmlPort,
+      };
+
+      proxy = new ReverseProxy(config);
+      await proxy.start();
+      proxyPort = proxy.getPort()!;
+
+      const response = await makeRequest(`http://127.0.0.1:${proxyPort}/`);
+
+      // Verify mobile adaptation code is injected
+      expect(response.body).toContain('data-dsh-mobile');
+      expect(response.body).toContain('isMobile');
+      expect(response.body).toContain('dsh-mobile-menu-btn');
+      expect(response.body).toContain('hideDesktopOnlyNav');
+
+      // Verify the CSS contains key mobile adaptations (inlined from MOBILE_CSS constant)
+      expect(response.body).toContain('dshDesktopFrame');
+      expect(response.body).toContain('grid-template-columns');
+      expect(response.body).toContain('translateX(-100%)');
+      expect(response.body).toContain('dsh-mobile-sidebar-width');
+      expect(response.body).toContain('dsh-mobile-touch-target');
+
+      await new Promise<void>((resolve) => {
+        htmlServer.close(() => resolve());
+      });
+    });
+
+    it('should not re-inject shim if already present', async () => {
+      const htmlServer = createServer((_req, res) => {
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end('<html><head><script data-dsh-mobile-shim>already injected</script></head><body>Test</body></html>');
+      });
+
+      await new Promise<void>((resolve) => {
+        htmlServer.listen(0, '127.0.0.1', () => resolve());
+      });
+      const htmlPort = (htmlServer.address() as any).port;
+
+      const config: ProxyConfig = {
+        port: 0,
+        upstreamHost: '127.0.0.1',
+        upstreamPort: htmlPort,
+      };
+
+      proxy = new ReverseProxy(config);
+      await proxy.start();
+      proxyPort = proxy.getPort()!;
+
+      const response = await makeRequest(`http://127.0.0.1:${proxyPort}/`);
+
+      // Should not contain duplicate shim markers
+      const markerCount = (response.body.match(/data-dsh-mobile-shim/g) || []).length;
+      expect(markerCount).toBe(1);
+
+      await new Promise<void>((resolve) => {
+        htmlServer.close(() => resolve());
+      });
+    });
   });
 
   describe('WebSocket proxying', () => {
