@@ -80,10 +80,10 @@ describe('service', () => {
 
       it('should include PIN in URL when provided', async () => {
         const service = new MobileService({});
-        const qrData = await service.generateQrCode('http://192.168.1.50:3081', '12345678');
+        const qrData = await service.generateQrCode('http://192.168.1.50:3081?pin=12345678');
 
         expect(qrData).toMatch(/^data:image\/png;base64,/);
-        // The URL with token should be encoded in the QR code
+        // The URL with the PIN should be encoded in the QR code
       });
     });
 
@@ -97,7 +97,7 @@ describe('service', () => {
       it('should return URL with token when PIN enabled', () => {
         const service = new MobileService({});
         const url = service.getAccessUrl('192.168.1.50', 3081, true, '12345678');
-        expect(url).toBe('http://192.168.1.50:3081?token=12345678');
+        expect(url).toBe('http://192.168.1.50:3081?pin=12345678');
       });
     });
   });

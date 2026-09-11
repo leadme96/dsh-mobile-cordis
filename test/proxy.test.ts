@@ -123,7 +123,7 @@ describe('proxy', () => {
       proxyPort = proxy.getPort()!;
 
       const response = await makeRequest(
-        `http://127.0.0.1:${proxyPort}/?token=12345678`
+        `http://127.0.0.1:${proxyPort}/?pin=12345678`
       );
       expect(response.statusCode).toBe(200);
     });

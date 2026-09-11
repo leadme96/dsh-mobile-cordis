@@ -9,8 +9,8 @@ export const name = 'dsh-mobile';
 
 /**
  * Minimal shape of the host Connection service this plugin consumes. Declared
- * locally because `@deepseek-ai/dsh-client-connection` is part of the DSH
- * runtime rather than an installable dependency of an external plugin.
+ * locally because `@deepseek-ai/dsh-client-connection` ships inside the DSH
+ * runtime rather than as an installable dependency of an external plugin.
  */
 interface ConnectionService {
   rpc?: {
@@ -19,6 +19,14 @@ interface ConnectionService {
       handler: (endpoint: string, payload: unknown, signal?: AbortSignal) => Promise<unknown>,
     ) => () => void;
   };
+  /** Root URL carrying this process's launch token (mints a browser session on first visit). */
+  authenticatedUrl?: (baseUrl: string) => string;
+}
+
+/** Minimal shape of the host web server service (owns the real DSH HTTP port). */
+interface WebServerService {
+  port?: number;
+  host?: string;
 }
 
 export interface Config {
@@ -35,7 +43,7 @@ export interface Config {
 export const Config = Schema.object({
   enabled: Schema.boolean().default(true).description('Enable mobile access proxy'),
   port: Schema.number().default(3081).description('Proxy port (listens on 0.0.0.0)'),
-  upstreamPort: Schema.number().default(3080).description('DSH web upstream port (127.0.0.1)'),
+  upstreamPort: Schema.number().default(0).description('Fallback DSH web port (0 = read the live web server port)'),
   lanIpOverride: Schema.string().default('').description('Manually override detected LAN IP (empty for auto-detect)'),
   pinEnabled: Schema.boolean().default(false).description('Require PIN for access'),
   customPin: Schema.string().default('').description('Custom PIN (8 digits, empty for auto-generated)'),
@@ -49,34 +57,103 @@ export function apply(ctx: Context, config: Config): void {
     return;
   }
 
-  // Detect DSH Desktop environment
   const isDesktop = ctx.get?.('desktopProfiles') !== undefined;
   if (isDesktop) {
     log(ctx, 'Running in DSH Desktop environment');
   }
 
-  // Initialize services
   const settingsManager = new SettingsManager(config.dshHome, config.customPin || undefined);
   const mobileService = new MobileService({ lanIpOverride: config.lanIpOverride || undefined });
 
-  // Detect LAN IP
   const lanIp = mobileService.detectLanIp();
   if (!lanIp) {
     log(ctx, 'Warning: Could not detect LAN IP. Use lanIpOverride to set manually.');
   }
 
-  // State for RPC
+  // State shared by the proxy half and the RPC half of the plugin.
   let proxy: ReverseProxy | undefined;
+  let connectionService: ConnectionService | undefined;
   let currentPin: string | undefined;
   let proxyRunning = false;
 
-  // Register the RPC channel. The host Connection service may still be
-  // activating while this plugin applies, so wait for it instead of reading it
-  // once through `ctx.get` (which only returns active fibers and would leave
-  // the channel unregistered, surfacing as HTTP 405 in the settings panel).
+  /**
+   * The phone-facing URL. DSH guards its web server with a per-process launch
+   * token, so the URL must carry it: the first visit exchanges the token for a
+   * browser-session cookie, after which ordinary navigation works. The PIN rides
+   * as `pin`, never as `token` — that query key belongs to DSH.
+   */
+  const buildAccessUrl = (): string | null => {
+    const port = proxy?.getPort();
+    if (!lanIp || !port) return null;
+
+    const base = `http://${lanIp}:${port}/`;
+    const authenticated = connectionService?.authenticatedUrl?.(base) ?? base;
+
+    const url = new URL(authenticated);
+    if (config.pinEnabled && currentPin) url.searchParams.set('pin', currentPin);
+    return url.href;
+  };
+
+  // The DSH web server owns its port — DSH Desktop binds an ephemeral one, so a
+  // hardcoded upstream default proxies into nothing and answers 502.
+  ctx.inject(['webServer'], (hostCtx) => {
+    const webServer = (hostCtx as unknown as { webServer?: WebServerService }).webServer;
+    const upstreamPort = webServer?.port && webServer.port > 0 ? webServer.port : config.upstreamPort;
+
+    if (!upstreamPort) {
+      log(hostCtx, 'No DSH web port available — mobile proxy not started');
+      return;
+    }
+
+    hostCtx.effect(async () => {
+      currentPin = await settingsManager.getPin();
+
+      proxy = new ReverseProxy({
+        port: config.port,
+        upstreamHost: '127.0.0.1',
+        upstreamPort,
+        pinEnabled: config.pinEnabled,
+        pin: currentPin,
+        heartbeatInterval: config.heartbeatInterval,
+      });
+
+      try {
+        await proxy.start();
+        proxyRunning = true;
+
+        log(hostCtx, `Mobile proxy listening on 0.0.0.0:${proxy.getPort()} → 127.0.0.1:${upstreamPort}`);
+
+        const accessUrl = buildAccessUrl();
+        if (accessUrl) {
+          log(hostCtx, `Access URL: ${accessUrl}`);
+          qrcodeTerminal.generate(accessUrl, { small: true }, (qr: string) => {
+            console.log(qr);
+          });
+        } else {
+          log(hostCtx, 'Warning: no access URL yet (LAN IP or proxy port missing)');
+        }
+      } catch (err) {
+        log(hostCtx, `Failed to start proxy: ${err}`);
+        throw err;
+      }
+
+      return async () => {
+        if (proxy) {
+          await proxy.stop();
+          proxyRunning = false;
+          log(hostCtx, 'Mobile access proxy stopped');
+        }
+      };
+    }, 'dsh-mobile: reverse proxy');
+  });
+
+  // The Connection service may still be activating while this plugin applies, so
+  // wait for it: reading it once through `ctx.get` would leave the channel
+  // unregistered and surface as HTTP 405 in the settings panel.
   ctx.inject(['connection'], (rpcCtx) => {
-    const connection = (rpcCtx as unknown as { connection?: ConnectionService }).connection;
-    const handle = connection?.rpc?.handle;
+    connectionService = (rpcCtx as unknown as { connection?: ConnectionService }).connection;
+    const handle = connectionService?.rpc?.handle;
+
     if (typeof handle !== 'function') {
       log(rpcCtx, 'Host Connection RPC unavailable — settings panel disabled');
       return;
@@ -85,13 +162,8 @@ export function apply(ctx: Context, config: Config): void {
     handle('/dsh-mobile', async (endpoint: string, payload: unknown = {}) => {
       switch (endpoint) {
         case 'status': {
-          const actualPort = proxy?.getPort();
-          const accessUrl = lanIp && actualPort
-            ? mobileService.getAccessUrl(lanIp, actualPort, config.pinEnabled, currentPin)
-            : null;
-          const qrDataUrl = accessUrl
-            ? await mobileService.generateQrCode(accessUrl)
-            : null;
+          const accessUrl = buildAccessUrl();
+          const qrDataUrl = accessUrl ? await mobileService.generateQrCode(accessUrl) : null;
 
           return {
             ok: true,
@@ -99,7 +171,7 @@ export function apply(ctx: Context, config: Config): void {
               enabled: true,
               proxyRunning,
               lanIp: lanIp || null,
-              port: actualPort || null,
+              port: proxy?.getPort() ?? null,
               pinEnabled: config.pinEnabled,
               pin: currentPin || null,
               accessUrl,
@@ -122,59 +194,10 @@ export function apply(ctx: Context, config: Config): void {
 
     log(rpcCtx, 'RPC channel /dsh-mobile registered');
   });
-
-  // Start proxy
-  ctx.effect(async () => {
-    // Get or generate PIN
-    currentPin = await settingsManager.getPin();
-
-    // Create proxy config
-    const proxyConfig = {
-      port: config.port,
-      upstreamHost: '127.0.0.1',
-      upstreamPort: config.upstreamPort,
-      pinEnabled: config.pinEnabled,
-      pin: currentPin,
-      heartbeatInterval: config.heartbeatInterval,
-    };
-
-    proxy = new ReverseProxy(proxyConfig);
-
-    try {
-      await proxy.start();
-      proxyRunning = true;
-      const actualPort = proxy.getPort();
-
-      log(ctx, `Mobile access proxy started on port ${actualPort}`);
-
-      if (lanIp) {
-        const accessUrl = mobileService.getAccessUrl(lanIp, actualPort!, config.pinEnabled, currentPin);
-        log(ctx, `Access URL: ${accessUrl}`);
-
-        // Generate QR code for terminal
-        const qrUrl = config.pinEnabled ? `${accessUrl}?token=${currentPin}` : accessUrl;
-        qrcodeTerminal.generate(qrUrl, { small: true }, (qr: string) => {
-          console.log(qr);
-        });
-      }
-    } catch (err) {
-      log(ctx, `Failed to start proxy: ${err}`);
-      throw err;
-    }
-
-    // Return disposer
-    return async () => {
-      if (proxy) {
-        await proxy.stop();
-        proxyRunning = false;
-        log(ctx, 'Mobile access proxy stopped');
-      }
-    };
-  });
 }
 
 /**
- * Logger that uses Cordis logger if available, falls back to console.
+ * Logger that uses the Cordis logger if available, falling back to the console.
  */
 function log(ctx: Context, message: string): void {
   const logger = ctx.get?.('logger');

@@ -92,14 +92,16 @@ export class MobileService {
 
   /**
    * Generate QR code as data URL for the given access URL.
+   * The caller owns the complete URL: DSH's launch token and the optional PIN
+   * are both query parameters that must survive verbatim into the QR code.
    */
-  async generateQrCode(url: string, pin?: string): Promise<string> {
-    const fullUrl = pin ? `${url}?token=${pin}` : url;
-    return QRCode.toDataURL(fullUrl);
+  async generateQrCode(url: string): Promise<string> {
+    return QRCode.toDataURL(url);
   }
 
   /**
-   * Build the access URL with optional PIN token.
+   * Build the access URL with an optional PIN. The PIN uses the `pin` key —
+   * `token` belongs to DSH's own launch-token exchange and must not be reused.
    */
   getAccessUrl(
     lanIp: string,
@@ -109,7 +111,7 @@ export class MobileService {
   ): string {
     const baseUrl = `http://${lanIp}:${port}`;
     if (pinEnabled && pin) {
-      return `${baseUrl}?token=${pin}`;
+      return `${baseUrl}?pin=${pin}`;
     }
     return baseUrl;
   }

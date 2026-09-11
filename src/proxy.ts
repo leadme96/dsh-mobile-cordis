@@ -72,10 +72,11 @@ export class ReverseProxy {
    */
   private async handleHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {
     try {
-      // Check PIN authentication if enabled
+      // Check PIN authentication if enabled. The PIN rides as `pin`: `token` is
+      // DSH's own launch-token query key and must pass through untouched.
       if (this.config.pinEnabled && this.config.pin) {
         const url = new URL(req.url || '/', `http://${req.headers.host}`);
-        const token = url.searchParams.get('token');
+        const token = url.searchParams.get('pin');
         if (token !== this.config.pin) {
           res.writeHead(401, { 'Content-Type': 'text/plain' });
           res.end('Unauthorized: Invalid or missing PIN');

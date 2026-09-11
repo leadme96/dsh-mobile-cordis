@@ -16,10 +16,13 @@ export declare class MobileService {
     detectLanIp(): string | undefined;
     /**
      * Generate QR code as data URL for the given access URL.
+     * The caller owns the complete URL: DSH's launch token and the optional PIN
+     * are both query parameters that must survive verbatim into the QR code.
      */
-    generateQrCode(url: string, pin?: string): Promise<string>;
+    generateQrCode(url: string): Promise<string>;
     /**
-     * Build the access URL with optional PIN token.
+     * Build the access URL with an optional PIN. The PIN uses the `pin` key —
+     * `token` belongs to DSH's own launch-token exchange and must not be reused.
      */
     getAccessUrl(lanIp: string, port: number, pinEnabled: boolean, pin?: string): string;
 }
