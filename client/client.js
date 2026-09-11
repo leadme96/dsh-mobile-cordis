@@ -9,6 +9,7 @@ window.__ModuleLoader__.load({
     var useState = React.useState;
 
     var name = 'dsh-mobile-cordis';
+    var inject = ['slots', 'connection'];
 
     var MOBILE_RPC_CHANNEL = '/dsh-mobile';
 
@@ -156,7 +157,7 @@ window.__ModuleLoader__.load({
       );
     }
 
-    module.exports = { name: name, apply: apply };
+    module.exports = { name: name, inject: inject, apply: apply };
     return module.exports;
   }
 });
