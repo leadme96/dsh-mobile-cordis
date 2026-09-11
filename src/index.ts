@@ -7,6 +7,20 @@ import qrcodeTerminal from 'qrcode-terminal';
 
 export const name = 'dsh-mobile';
 
+/**
+ * Minimal shape of the host Connection service this plugin consumes. Declared
+ * locally because `@deepseek-ai/dsh-client-connection` is part of the DSH
+ * runtime rather than an installable dependency of an external plugin.
+ */
+interface ConnectionService {
+  rpc?: {
+    handle?: (
+      channel: string,
+      handler: (endpoint: string, payload: unknown, signal?: AbortSignal) => Promise<unknown>,
+    ) => () => void;
+  };
+}
+
 export interface Config {
   enabled: boolean;
   port: number;
@@ -56,49 +70,57 @@ export function apply(ctx: Context, config: Config): void {
   let currentPin: string | undefined;
   let proxyRunning = false;
 
-  // Register RPC channel for client communication
-  ctx.effect(() => {
-    const connection = ctx.get?.('connection');
-    if (connection?.rpc?.handle) {
-      const disposer = connection.rpc.handle('/dsh-mobile', async (endpoint: string, payload: unknown = {}) => {
-        switch (endpoint) {
-          case 'status': {
-            const actualPort = proxy?.getPort();
-            const accessUrl = lanIp && actualPort
-              ? mobileService.getAccessUrl(lanIp, actualPort, config.pinEnabled, currentPin)
-              : null;
-            const qrDataUrl = accessUrl
-              ? await mobileService.generateQrCode(accessUrl)
-              : null;
-
-            return {
-              ok: true,
-              value: {
-                enabled: true,
-                proxyRunning,
-                lanIp: lanIp || null,
-                port: actualPort || null,
-                pinEnabled: config.pinEnabled,
-                pin: currentPin || null,
-                accessUrl,
-                qrDataUrl,
-                isDesktop,
-              },
-            };
-          }
-
-          case 'generateQr': {
-            const { url } = payload as { url: string };
-            const qr = await mobileService.generateQrCode(url);
-            return { ok: true, value: qr };
-          }
-
-          default:
-            return { ok: false, error: { code: 'bad-request', message: `Unknown endpoint: ${endpoint}`, details: {} } };
-        }
-      });
-      return disposer;
+  // Register the RPC channel. The host Connection service may still be
+  // activating while this plugin applies, so wait for it instead of reading it
+  // once through `ctx.get` (which only returns active fibers and would leave
+  // the channel unregistered, surfacing as HTTP 405 in the settings panel).
+  ctx.inject(['connection'], (rpcCtx) => {
+    const connection = (rpcCtx as unknown as { connection?: ConnectionService }).connection;
+    const handle = connection?.rpc?.handle;
+    if (typeof handle !== 'function') {
+      log(rpcCtx, 'Host Connection RPC unavailable — settings panel disabled');
+      return;
     }
+
+    handle('/dsh-mobile', async (endpoint: string, payload: unknown = {}) => {
+      switch (endpoint) {
+        case 'status': {
+          const actualPort = proxy?.getPort();
+          const accessUrl = lanIp && actualPort
+            ? mobileService.getAccessUrl(lanIp, actualPort, config.pinEnabled, currentPin)
+            : null;
+          const qrDataUrl = accessUrl
+            ? await mobileService.generateQrCode(accessUrl)
+            : null;
+
+          return {
+            ok: true,
+            value: {
+              enabled: true,
+              proxyRunning,
+              lanIp: lanIp || null,
+              port: actualPort || null,
+              pinEnabled: config.pinEnabled,
+              pin: currentPin || null,
+              accessUrl,
+              qrDataUrl,
+              isDesktop,
+            },
+          };
+        }
+
+        case 'generateQr': {
+          const { url } = payload as { url: string };
+          const qr = await mobileService.generateQrCode(url);
+          return { ok: true, value: qr };
+        }
+
+        default:
+          return { ok: false, error: { code: 'bad-request', message: `Unknown endpoint: ${endpoint}`, details: {} } };
+      }
+    });
+
+    log(rpcCtx, 'RPC channel /dsh-mobile registered');
   });
 
   // Start proxy
