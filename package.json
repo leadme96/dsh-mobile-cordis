@@ -24,6 +24,15 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-locale"
+      ],
+      "platform": "web"
     }
   },
   "license": "MIT",
@@ -31,7 +40,8 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node client/build.mjs",
+    "build:client": "node client/build.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -53,6 +63,7 @@
     "@types/node": "^24.0.0",
     "@types/qrcode": "^1.5.5",
     "@types/ws": "^8.5.10",
+    "esbuild": "^0.25.0",
     "oxlint": "^1.80.0",
     "tsx": "^4.23.0",
     "typescript": "^5.9.3",

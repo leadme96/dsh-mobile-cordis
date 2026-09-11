@@ -51,12 +51,61 @@ export function apply(ctx: Context, config: Config): void {
     log(ctx, 'Warning: Could not detect LAN IP. Use lanIpOverride to set manually.');
   }
 
-  // Start proxy
+  // State for RPC
   let proxy: ReverseProxy | undefined;
+  let currentPin: string | undefined;
+  let proxyRunning = false;
 
+  // Register RPC channel for client communication
+  ctx.effect(() => {
+    const connection = ctx.get?.('connection');
+    if (connection?.rpc?.register) {
+      connection.rpc.register('/dsh-mobile', async (request: { method: string; payload?: unknown }) => {
+        const { method, payload } = request;
+
+        switch (method) {
+          case 'status': {
+            const actualPort = proxy?.getPort();
+            const accessUrl = lanIp && actualPort
+              ? mobileService.getAccessUrl(lanIp, actualPort, config.pinEnabled, currentPin)
+              : null;
+            const qrDataUrl = accessUrl
+              ? await mobileService.generateQrCode(accessUrl)
+              : null;
+
+            return {
+              ok: true,
+              value: {
+                enabled: true,
+                proxyRunning,
+                lanIp: lanIp || null,
+                port: actualPort || null,
+                pinEnabled: config.pinEnabled,
+                pin: currentPin || null,
+                accessUrl,
+                qrDataUrl,
+                isDesktop,
+              },
+            };
+          }
+
+          case 'generateQr': {
+            const { url } = payload as { url: string };
+            const qr = await mobileService.generateQrCode(url);
+            return { ok: true, value: qr };
+          }
+
+          default:
+            return { ok: false, error: { message: `Unknown method: ${method}` } };
+        }
+      });
+    }
+  });
+
+  // Start proxy
   ctx.effect(async () => {
     // Get or generate PIN
-    const pin = await settingsManager.getPin();
+    currentPin = await settingsManager.getPin();
 
     // Create proxy config
     const proxyConfig = {
@@ -64,7 +113,7 @@ export function apply(ctx: Context, config: Config): void {
       upstreamHost: '127.0.0.1',
       upstreamPort: config.upstreamPort,
       pinEnabled: config.pinEnabled,
-      pin,
+      pin: currentPin,
       heartbeatInterval: config.heartbeatInterval,
     };
 
@@ -72,16 +121,17 @@ export function apply(ctx: Context, config: Config): void {
 
     try {
       await proxy.start();
+      proxyRunning = true;
       const actualPort = proxy.getPort();
 
       log(ctx, `Mobile access proxy started on port ${actualPort}`);
 
       if (lanIp) {
-        const accessUrl = mobileService.getAccessUrl(lanIp, actualPort!, config.pinEnabled, pin);
+        const accessUrl = mobileService.getAccessUrl(lanIp, actualPort!, config.pinEnabled, currentPin);
         log(ctx, `Access URL: ${accessUrl}`);
 
         // Generate QR code for terminal
-        const qrUrl = config.pinEnabled ? `${accessUrl}?token=${pin}` : accessUrl;
+        const qrUrl = config.pinEnabled ? `${accessUrl}?token=${currentPin}` : accessUrl;
         qrcodeTerminal.generate(qrUrl, { small: true }, (qr: string) => {
           console.log(qr);
         });
@@ -95,6 +145,7 @@ export function apply(ctx: Context, config: Config): void {
     return async () => {
       if (proxy) {
         await proxy.stop();
+        proxyRunning = false;
         log(ctx, 'Mobile access proxy stopped');
       }
     };
