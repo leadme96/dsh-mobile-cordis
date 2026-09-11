@@ -8,8 +8,7 @@ window.__ModuleLoader__.load({
     var useEffect = React.useEffect;
     var useState = React.useState;
 
-    var name = 'dsh-mobile';
-    var inject = ['slots', 'connection'];
+    var name = 'dsh-mobile-cordis';
 
     var MOBILE_RPC_CHANNEL = '/dsh-mobile';
 
@@ -51,8 +50,8 @@ window.__ModuleLoader__.load({
       var error = errorState[0];
       var setError = errorState[1];
 
-      var call = async function(method, payload) {
-        var res = await rpcCall(MOBILE_RPC_CHANNEL, { method: method, payload: payload });
+      var call = async function(endpoint, payload) {
+        var res = await rpcCall(endpoint, payload);
         if (!res || !res.ok) throw new Error((res && res.error && res.error.message) || 'RPC failed');
         return res.value;
       };
@@ -136,18 +135,28 @@ window.__ModuleLoader__.load({
     }
 
     function apply(ctx) {
-      var rpcCall = async function(channel, request) {
-        return ctx.connection.rpc.call(channel, request);
+      var rpcCall = function(endpoint, payload) {
+        return ctx.connection.rpc.call(MOBILE_RPC_CHANNEL, endpoint, payload);
       };
 
-      ctx.slots.inject('settings.section', 'dsh-mobile', {
-        title: 'Mobile Access',
-        order: 100,
-        render: function() { return h(MobileSettingsPanel, { rpcCall: rpcCall }); },
-      });
+      ctx.slots.inject(
+        "settings.section",
+        function() {
+          return ctx.slots.register(
+            {
+              name: "settings.section",
+              id: "dsh-mobile",
+              order: 100,
+              label: function() { return "Mobile Access"; },
+              inject: function() { return { rpcCall: rpcCall }; }
+            },
+            MobileSettingsPanel
+          );
+        }
+      );
     }
 
-    module.exports = { name: name, inject: inject, apply: apply };
+    module.exports = { name: name, apply: apply };
     return module.exports;
   }
 });

@@ -59,11 +59,9 @@ export function apply(ctx: Context, config: Config): void {
   // Register RPC channel for client communication
   ctx.effect(() => {
     const connection = ctx.get?.('connection');
-    if (connection?.rpc?.register) {
-      connection.rpc.register('/dsh-mobile', async (request: { method: string; payload?: unknown }) => {
-        const { method, payload } = request;
-
-        switch (method) {
+    if (connection?.rpc?.handle) {
+      const disposer = connection.rpc.handle('/dsh-mobile', async (endpoint: string, payload: unknown = {}) => {
+        switch (endpoint) {
           case 'status': {
             const actualPort = proxy?.getPort();
             const accessUrl = lanIp && actualPort
@@ -96,9 +94,10 @@ export function apply(ctx: Context, config: Config): void {
           }
 
           default:
-            return { ok: false, error: { message: `Unknown method: ${method}` } };
+            return { ok: false, error: { code: 'bad-request', message: `Unknown endpoint: ${endpoint}`, details: {} } };
         }
       });
+      return disposer;
     }
   });
 
