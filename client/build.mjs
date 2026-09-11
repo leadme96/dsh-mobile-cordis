@@ -1,4 +1,4 @@
-// dsh-mobile-cordis client build script: client/index.jsx → client/index.js
+// dsh-mobile-cordis client build script: client/index.jsx → client/client.js
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -6,7 +6,7 @@ import { build } from 'esbuild';
 
 const sourceDir = dirname(fileURLToPath(import.meta.url));
 const packageRoot = resolve(sourceDir, '..');
-const outputPath = resolve(sourceDir, 'index.js');
+const outputPath = resolve(sourceDir, 'client.js');
 const loaderId = process.env.DSH_MOBILE_CLIENT_ID ?? 'dsh-mobile';
 
 const result = await build({
