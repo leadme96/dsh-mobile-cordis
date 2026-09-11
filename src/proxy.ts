@@ -384,11 +384,12 @@ if (!globalThis.__DSH_TRANSPORT__?.createApiClient) {
     btn.id = 'dsh-mobile-menu-btn';
     btn.setAttribute('aria-label', 'Toggle sidebar');
     btn.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>';
-    btn.style.cssText = 'position:fixed;top:8px;left:8px;z-index:10000;width:40px;height:40px;border:none;border-radius:8px;background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,0.05));color:var(--dsw-alias-label-primary,inherit);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;min-height:40px;min-width:40px;';
-    btn.addEventListener('click', function() {
+    btn.style.cssText = 'position:fixed;top:8px;left:8px;z-index:10001;width:40px;height:40px;border:none;border-radius:8px;background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,0.05));color:var(--dsw-alias-label-primary,inherit);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;min-height:40px;min-width:40px;';
+    btn.addEventListener('click', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
       var html = document.documentElement;
-      var isOpen = html.getAttribute('data-dsh-mobile-sidebar-open') === 'true';
-      html.setAttribute('data-dsh-mobile-sidebar-open', isOpen ? 'false' : 'true');
+      html.classList.toggle('dsh-mobile-sidebar-open');
     });
     document.body.appendChild(btn);
   }
@@ -397,11 +398,11 @@ if (!globalThis.__DSH_TRANSPORT__?.createApiClient) {
   function setupBackdropClose() {
     document.addEventListener('click', function(e) {
       var html = document.documentElement;
-      if (html.getAttribute('data-dsh-mobile-sidebar-open') !== 'true') return;
+      if (!html.classList.contains('dsh-mobile-sidebar-open')) return;
       // If click is outside sidebar, close it
       var sidebar = document.querySelector('.dshDesktopSidebarSurface');
       if (sidebar && !sidebar.contains(e.target) && e.target.id !== 'dsh-mobile-menu-btn') {
-        html.setAttribute('data-dsh-mobile-sidebar-open', 'false');
+        html.classList.remove('dsh-mobile-sidebar-open');
       }
     });
   }
@@ -474,13 +475,13 @@ html[data-dsh-mobile] .dshDesktopSidebarSurface {
   background: var(--dsw-alias-bg-layer-1, #fff) !important;
 }
 
-html[data-dsh-mobile][data-dsh-mobile-sidebar-open] .dshDesktopSidebarSurface {
+html[data-dsh-mobile].dsh-mobile-sidebar-open .dshDesktopSidebarSurface {
   transform: translateX(0) !important;
   box-shadow: 4px 0 24px rgba(0,0,0,0.15) !important;
 }
 
 /* Backdrop when sidebar is open */
-html[data-dsh-mobile][data-dsh-mobile-sidebar-open]::after {
+html[data-dsh-mobile].dsh-mobile-sidebar-open::after {
   content: '' !important;
   position: fixed !important;
   top: 0 !important;
@@ -503,6 +504,7 @@ html[data-dsh-mobile]::before {
   background: var(--dsw-alias-bg-layer-1, #fff) !important;
   border-bottom: 1px solid var(--dsw-alias-border-l1, #e5e7eb) !important;
   z-index: 9997 !important;
+  pointer-events: none !important;
 }
 
 /* ===== Touch target optimization ===== */
