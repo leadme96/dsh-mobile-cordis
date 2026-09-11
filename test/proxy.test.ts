@@ -211,8 +211,83 @@ describe('proxy', () => {
     });
   });
 
-  // WebSocket tests deferred - require 'ws' package
-  // describe('WebSocket proxying', () => { ... });
+  describe('WebSocket proxying', () => {
+    it('should complete the handshake so the client socket opens', async () => {
+      const { createHash } = await import('node:crypto');
+      const { connect } = await import('node:net');
+
+      const key = 'dGhlIHNhbXBsZSBub25jZQ==';
+      const expectedAccept = createHash('sha1')
+        .update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
+        .digest('base64');
+
+      const upstreamSockets = new Set<import('node:net').Socket>();
+
+      upstreamServer.on('upgrade', (req, rawSocket) => {
+        // node types the upgrade socket as a bare Duplex; it is a net.Socket.
+        const socket = rawSocket as import('node:net').Socket;
+        upstreamSockets.add(socket);
+        socket.on('close', () => upstreamSockets.delete(socket));
+
+        const accept = createHash('sha1')
+          .update(`${String(req.headers['sec-websocket-key'])}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
+          .digest('base64');
+        socket.write(
+          'HTTP/1.1 101 Switching Protocols\r\n' +
+            'Upgrade: websocket\r\n' +
+            'Connection: Upgrade\r\n' +
+            `Sec-WebSocket-Accept: ${accept}\r\n\r\n`
+        );
+        // Echo whole frames so the test can prove the tunnel carries bytes.
+        socket.on('data', (chunk) => socket.write(chunk));
+      });
+
+      const config: ProxyConfig = { port: 0, upstreamHost: '127.0.0.1', upstreamPort };
+      proxy = new ReverseProxy(config);
+      await proxy.start();
+      proxyPort = proxy.getPort()!;
+
+      const received = await new Promise<string>((resolve, reject) => {
+        const client = connect(proxyPort, '127.0.0.1', () => {
+          client.write(
+            'GET /ws HTTP/1.1\r\n' +
+              `Host: 127.0.0.1:${proxyPort}\r\n` +
+              'Upgrade: websocket\r\n' +
+              'Connection: Upgrade\r\n' +
+              `Sec-WebSocket-Key: ${key}\r\n` +
+              'Sec-WebSocket-Version: 13\r\n\r\n'
+          );
+        });
+
+        let buffer = Buffer.alloc(0);
+        const timer = setTimeout(() => {
+          client.destroy();
+          reject(new Error('timed out waiting for the 101 handshake through the proxy'));
+        }, 3000);
+
+        client.on('data', (chunk) => {
+          buffer = Buffer.concat([buffer, chunk]);
+          if (!buffer.includes(Buffer.from('\r\n\r\n'))) return;
+          clearTimeout(timer);
+          client.destroy();
+          resolve(buffer.toString('latin1'));
+        });
+        client.on('error', (err) => {
+          clearTimeout(timer);
+          reject(err);
+        });
+      });
+
+      // Release the upstream half so the shared server can close in `afterEach`.
+      for (const socket of upstreamSockets) socket.destroy();
+
+      // The defect this covers: the proxy piped the sockets without replaying
+      // upstream's 101, so the browser never saw a completed handshake.
+      // Header names are case-insensitive — node's HTTP client lowercases them.
+      expect(received.toLowerCase()).toContain('101 switching protocols');
+      expect(received.toLowerCase()).toContain(`sec-websocket-accept: ${expectedAccept.toLowerCase()}`);
+    });
+  });
 });
 
 // Helper to make HTTP requests

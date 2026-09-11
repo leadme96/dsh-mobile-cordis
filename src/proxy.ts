@@ -24,6 +24,8 @@ export class ReverseProxy {
   private readonly config: ProxyConfig;
   private server: Server | undefined;
   private port: number | undefined;
+  /** Live client sockets, tracked so `stop()` can tear down upgraded tunnels. */
+  private readonly sockets = new Set<Socket>();
 
   constructor(config: ProxyConfig) {
     this.config = config;
@@ -34,6 +36,11 @@ export class ReverseProxy {
    */
   async start(): Promise<void> {
     this.server = createServer((req, res) => this.handleHttp(req, res));
+
+    this.server.on('connection', (socket) => {
+      this.sockets.add(socket);
+      socket.on('close', () => this.sockets.delete(socket));
+    });
 
     // Handle WebSocket upgrades
     this.server.on('upgrade', (req, socket, head) => {
@@ -50,10 +57,14 @@ export class ReverseProxy {
   }
 
   /**
-   * Stop the proxy server.
+   * Stop the proxy server. Upgraded sockets outlive a plain `close()`, so they
+   * are destroyed first — otherwise stopping hangs until every tunnel ends.
    */
   async stop(): Promise<void> {
     if (!this.server) return;
+
+    for (const socket of this.sockets) socket.destroy();
+    this.sockets.clear();
 
     return new Promise((resolve) => {
       this.server!.close(() => resolve());
@@ -165,11 +176,32 @@ export class ReverseProxy {
       },
     });
 
-    proxyReq.on('upgrade', (_proxyRes, proxySocket) => {
+    proxyReq.on('upgrade', (proxyRes, proxySocket, proxyHead) => {
+      // Node's HTTP client has already consumed the upstream `101 Switching
+      // Protocols` status line and headers, so piping the raw sockets alone
+      // leaves the browser waiting for a handshake that never arrives and every
+      // WebSocket dies. Replay the response onto the client socket first.
+      const responseHeaders = Object.entries(proxyRes.headers)
+        .filter(([, value]) => value !== undefined)
+        .map(([headerName, value]) => `${headerName}: ${Array.isArray(value) ? value.join(', ') : String(value)}`)
+        .join('\r\n');
+
+      socket.write(
+        `HTTP/1.1 ${proxyRes.statusCode} ${proxyRes.statusMessage}\r\n${responseHeaders}\r\n\r\n`
+      );
+
+      // Frames read past the handshake by either side must not be dropped.
+      if (proxyHead.length > 0) socket.write(proxyHead);
+      if (head.length > 0) proxySocket.write(head);
+
       // Bidirectionally pipe the sockets
-      socket.write(head);
       proxySocket.pipe(socket);
       socket.pipe(proxySocket);
+
+      // Either half closing ends the tunnel; without this the peer socket leaks
+      // and keeps the server from shutting down.
+      socket.on('close', () => proxySocket.destroy());
+      proxySocket.on('close', () => socket.destroy());
 
       // Setup heartbeat if configured
       if (this.config.heartbeatInterval && this.config.heartbeatInterval > 0) {

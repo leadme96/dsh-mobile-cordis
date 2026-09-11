@@ -14,13 +14,16 @@ export declare class ReverseProxy {
     private readonly config;
     private server;
     private port;
+    /** Live client sockets, tracked so `stop()` can tear down upgraded tunnels. */
+    private readonly sockets;
     constructor(config: ProxyConfig);
     /**
      * Start the proxy server.
      */
     start(): Promise<void>;
     /**
-     * Stop the proxy server.
+     * Stop the proxy server. Upgraded sockets outlive a plain `close()`, so they
+     * are destroyed first — otherwise stopping hangs until every tunnel ends.
      */
     stop(): Promise<void>;
     /**

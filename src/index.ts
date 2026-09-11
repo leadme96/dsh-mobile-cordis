@@ -197,10 +197,13 @@ export function apply(ctx: Context, config: Config): void {
 }
 
 /**
- * Logger that uses the Cordis logger if available, falling back to the console.
+ * Logger that uses the Cordis context logger, falling back to the console.
+ * `ctx.logger` is a context property rather than a service, so it is read
+ * directly instead of through `ctx.get` (which would silently fall through to
+ * the console and leave plugin output out of the application log).
  */
 function log(ctx: Context, message: string): void {
-  const logger = ctx.get?.('logger');
+  const logger = (ctx as unknown as { logger?: { info?: (message: string) => void } }).logger;
   if (logger && typeof logger.info === 'function') {
     logger.info(`[dsh-mobile] ${message}`);
   } else {
