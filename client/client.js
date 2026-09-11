@@ -1,5 +1,5 @@
 window.__ModuleLoader__.load({
-  id: "dsh-mobile",
+  id: "dsh-mobile-cordis",
   factory: (require) => {
     var module = { exports: {} };
     var exports = module.exports;
