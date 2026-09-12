@@ -50,6 +50,9 @@ window.__ModuleLoader__.load({
       var errorState = useState(null);
       var error = errorState[0];
       var setError = errorState[1];
+      var togglingState = useState(false);
+      var toggling = togglingState[0];
+      var setToggling = togglingState[1];
 
       var call = async function(endpoint, payload) {
         var res = await rpcCall(endpoint, payload);
@@ -64,6 +67,19 @@ window.__ModuleLoader__.load({
           setError(null);
         } catch (err) {
           setError(err.message);
+        }
+      };
+
+      var toggleEnabled = async function() {
+        if (toggling || !status) return;
+        setToggling(true);
+        try {
+          await call('toggle', { enabled: !status.enabled });
+          await loadStatus();
+        } catch (err) {
+          setError(err.message);
+        } finally {
+          setToggling(false);
         }
       };
 
@@ -92,10 +108,44 @@ window.__ModuleLoader__.load({
       var qrDataUrl = status.qrDataUrl;
 
       return h('div', { style: styles.card }, [
-        // Status indicator
-        h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }, key: 'status' }, [
-          h('span', { style: { fontSize: 16 }, key: 'icon' }, enabled ? '🟢' : '🔴'),
-          h('span', { style: { fontWeight: 500 }, key: 'text' }, enabled ? '移动端访问已启用' : '移动端访问已禁用'),
+        // Status indicator with toggle switch
+        h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }, key: 'status' }, [
+          h('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } }, [
+            h('span', { style: { fontSize: 16 }, key: 'icon' }, enabled ? '🟢' : '🔴'),
+            h('span', { style: { fontWeight: 500 }, key: 'text' }, enabled ? '移动端访问已启用' : '移动端访问已禁用'),
+          ]),
+          // Toggle switch
+          h('button', {
+            key: 'toggle',
+            onClick: toggleEnabled,
+            disabled: toggling,
+            style: {
+              position: 'relative',
+              width: 48,
+              height: 26,
+              borderRadius: 13,
+              border: 'none',
+              background: enabled ? 'var(--dsw-alias-state-success-bg, #22c55e)' : 'var(--dsw-alias-bg-layer-3, #d1d5db)',
+              cursor: toggling ? 'wait' : 'pointer',
+              transition: 'background 0.2s ease',
+              padding: 0,
+              opacity: toggling ? 0.6 : 1,
+            }
+          }, [
+            h('span', {
+              style: {
+                position: 'absolute',
+                top: 3,
+                left: enabled ? 25 : 3,
+                width: 20,
+                height: 20,
+                borderRadius: '50%',
+                background: '#fff',
+                transition: 'left 0.2s ease',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+              }
+            }),
+          ]),
         ]),
 
         // QR code section

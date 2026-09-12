@@ -75,6 +75,8 @@ export function apply(ctx: Context, config: Config): void {
   let connectionService: ConnectionService | undefined;
   let currentPin: string | undefined;
   let proxyRunning = false;
+  let manuallyEnabled = true; // Manual toggle state
+  let upstreamPort = 0;
 
   /**
    * The phone-facing URL. DSH guards its web server with a per-process launch
@@ -98,7 +100,7 @@ export function apply(ctx: Context, config: Config): void {
   // hardcoded upstream default proxies into nothing and answers 502.
   ctx.inject(['webServer'], (hostCtx) => {
     const webServer = (hostCtx as unknown as { webServer?: WebServerService }).webServer;
-    const upstreamPort = webServer?.port && webServer.port > 0 ? webServer.port : config.upstreamPort;
+    upstreamPort = webServer?.port && webServer.port > 0 ? webServer.port : config.upstreamPort;
 
     if (!upstreamPort) {
       log(hostCtx, 'No DSH web port available — mobile proxy not started');
@@ -108,44 +110,64 @@ export function apply(ctx: Context, config: Config): void {
     hostCtx.effect(async () => {
       currentPin = await settingsManager.getPin();
 
-      proxy = new ReverseProxy({
-        port: config.port,
-        upstreamHost: '127.0.0.1',
-        upstreamPort,
-        pinEnabled: config.pinEnabled,
-        pin: currentPin,
-        heartbeatInterval: config.heartbeatInterval,
-      });
-
-      try {
-        await proxy.start();
-        proxyRunning = true;
-
-        log(hostCtx, `Mobile proxy listening on 0.0.0.0:${proxy.getPort()} → 127.0.0.1:${upstreamPort}`);
-
-        const accessUrl = buildAccessUrl();
-        if (accessUrl) {
-          log(hostCtx, `Access URL: ${accessUrl}`);
-          qrcodeTerminal.generate(accessUrl, { small: true }, (qr: string) => {
-            console.log(qr);
-          });
-        } else {
-          log(hostCtx, 'Warning: no access URL yet (LAN IP or proxy port missing)');
-        }
-      } catch (err) {
-        log(hostCtx, `Failed to start proxy: ${err}`);
-        throw err;
+      // Auto-start proxy if manually enabled
+      if (manuallyEnabled) {
+        await startProxy(hostCtx);
       }
 
       return async () => {
-        if (proxy) {
-          await proxy.stop();
-          proxyRunning = false;
-          log(hostCtx, 'Mobile access proxy stopped');
-        }
+        await stopProxy(hostCtx);
       };
     }, 'dsh-mobile: reverse proxy');
   });
+
+  /**
+   * Start the proxy server.
+   */
+  async function startProxy(logCtx: Context): Promise<void> {
+    if (proxyRunning || !upstreamPort) return;
+
+    proxy = new ReverseProxy({
+      port: config.port,
+      upstreamHost: '127.0.0.1',
+      upstreamPort,
+      pinEnabled: config.pinEnabled,
+      ...(currentPin ? { pin: currentPin } : {}),
+      heartbeatInterval: config.heartbeatInterval,
+    });
+
+    try {
+      await proxy.start();
+      proxyRunning = true;
+
+      log(logCtx, `Mobile proxy listening on 0.0.0.0:${proxy.getPort()} → 127.0.0.1:${upstreamPort}`);
+
+      const accessUrl = buildAccessUrl();
+      if (accessUrl) {
+        log(logCtx, `Access URL: ${accessUrl}`);
+        qrcodeTerminal.generate(accessUrl, { small: true }, (qr: string) => {
+          console.log(qr);
+        });
+      } else {
+        log(logCtx, 'Warning: no access URL yet (LAN IP or proxy port missing)');
+      }
+    } catch (err) {
+      log(logCtx, `Failed to start proxy: ${err}`);
+      throw err;
+    }
+  }
+
+  /**
+   * Stop the proxy server.
+   */
+  async function stopProxy(logCtx: Context): Promise<void> {
+    if (!proxyRunning || !proxy) return;
+
+    await proxy.stop();
+    proxyRunning = false;
+    proxy = undefined;
+    log(logCtx, 'Mobile access proxy stopped');
+  }
 
   // The Connection service may still be activating while this plugin applies, so
   // wait for it: reading it once through `ctx.get` would leave the channel
@@ -168,7 +190,7 @@ export function apply(ctx: Context, config: Config): void {
           return {
             ok: true,
             value: {
-              enabled: true,
+              enabled: manuallyEnabled,
               proxyRunning,
               lanIp: lanIp || null,
               port: proxy?.getPort() ?? null,
@@ -179,6 +201,19 @@ export function apply(ctx: Context, config: Config): void {
               isDesktop,
             },
           };
+        }
+
+        case 'toggle': {
+          const { enabled } = payload as { enabled: boolean };
+          manuallyEnabled = enabled;
+
+          if (enabled) {
+            await startProxy(ctx);
+          } else {
+            await stopProxy(ctx);
+          }
+
+          return { ok: true, value: { enabled: manuallyEnabled, proxyRunning } };
         }
 
         case 'generateQr': {
