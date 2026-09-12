@@ -376,64 +376,6 @@ if (!globalThis.__DSH_TRANSPORT__?.createApiClient) {
   // Also run on DOMContentLoaded and load events
   document.addEventListener('DOMContentLoaded', hideDesktopOnlyNav);
   window.addEventListener('load', hideDesktopOnlyNav);
-
-  // ===== Mobile hamburger menu for sidebar toggle =====
-  function createMobileMenuButton() {
-    if (document.getElementById('dsh-mobile-menu-btn')) return;
-    
-    // Create header bar first
-    var header = document.createElement('div');
-    header.id = 'dsh-mobile-header';
-    header.style.cssText = 'position:fixed;top:0;left:0;right:0;height:48px;background:var(--dsw-alias-bg-layer-1,#fff);border-bottom:1px solid var(--dsw-alias-border-l1,#e5e7eb);z-index:9997;display:flex;align-items:center;padding:0 8px;';
-    
-    // Create menu button
-    var btn = document.createElement('button');
-    btn.id = 'dsh-mobile-menu-btn';
-    btn.setAttribute('aria-label', 'Toggle sidebar');
-    btn.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>';
-    btn.style.cssText = 'width:40px;height:40px;border:none;border-radius:8px;background:transparent;color:var(--dsw-alias-label-primary,inherit);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;';
-    
-    header.appendChild(btn);
-    document.body.appendChild(header);
-    
-    // Create backdrop div
-    var backdrop = document.createElement('div');
-    backdrop.id = 'dsh-mobile-backdrop';
-    backdrop.style.cssText = 'position:fixed;top:48px;left:0;right:0;bottom:0;background:rgba(0,0,0,0.3);z-index:9998;display:none;';
-    document.body.appendChild(backdrop);
-    
-    // Toggle sidebar with simple class toggle
-    var sidebarOpen = false;
-    btn.onclick = function() {
-      sidebarOpen = !sidebarOpen;
-      if (sidebarOpen) {
-        document.documentElement.classList.add('dsh-mobile-sidebar-open');
-        backdrop.style.display = 'block';
-      } else {
-        document.documentElement.classList.remove('dsh-mobile-sidebar-open');
-        backdrop.style.display = 'none';
-      }
-    };
-    
-    // Close sidebar when clicking backdrop
-    backdrop.onclick = function() {
-      sidebarOpen = false;
-      document.documentElement.classList.remove('dsh-mobile-sidebar-open');
-      backdrop.style.display = 'none';
-    };
-  }
-
-  // Initialize mobile menu after DOM is ready
-  function initMobileMenu() {
-    createMobileMenuButton();
-  }
-
-  document.addEventListener('DOMContentLoaded', initMobileMenu);
-  window.addEventListener('load', initMobileMenu);
-  // Also try immediately in case DOM is already ready
-  if (document.readyState !== 'loading') {
-    setTimeout(initMobileMenu, 100);
-  }
 })();
 </script>
 `;
@@ -457,7 +399,6 @@ html[data-dsh-mobile] {
   --dsh-mobile-sidebar-width: 280px;
   --dsh-mobile-touch-target: 44px;
   --dsh-mobile-font-scale: 1.05;
-  --dsh-mobile-header-height: 48px;
 }
 
 /* Force single-column layout on mobile */
@@ -466,7 +407,6 @@ html[data-dsh-mobile] .dshDesktopFrame {
   width: 100vw !important;
   max-width: 100vw !important;
   overflow-x: hidden !important;
-  margin-top: var(--dsh-mobile-header-height) !important;
 }
 
 /* Hide the details panel on mobile */
@@ -478,10 +418,10 @@ html[data-dsh-mobile] [data-slot="details"] {
 /* ===== Sidebar as a slide-out drawer ===== */
 html[data-dsh-mobile] .dshDesktopSidebarSurface {
   position: fixed !important;
-  top: var(--dsh-mobile-header-height) !important;
+  top: 0 !important;
   left: 0 !important;
   width: var(--dsh-mobile-sidebar-width) !important;
-  height: calc(100vh - var(--dsh-mobile-header-height)) !important;
+  height: 100vh !important;
   z-index: 9999 !important;
   transform: translateX(-100%) !important;
   transition: transform 0.25s ease-out !important;
@@ -580,19 +520,14 @@ html[data-dsh-mobile] [data-settings-section="diagnostics"] {
 
 /* ===== Safe area insets for notched devices ===== */
 @supports (padding: env(safe-area-inset-top)) {
-  html[data-dsh-mobile] {
-    --dsh-mobile-header-height: calc(48px + env(safe-area-inset-top));
-  }
   html[data-dsh-mobile] .dshDesktopSidebarSurface {
+    padding-top: env(safe-area-inset-top) !important;
     padding-bottom: env(safe-area-inset-bottom) !important;
   }
 }
 
 /* ===== Dark mode support ===== */
 @media (prefers-color-scheme: dark) {
-  html[data-dsh-mobile] #dsh-mobile-header {
-    background: var(--dsw-alias-bg-layer-1, #1a1a1a) !important;
-  }
   html[data-dsh-mobile] .dshDesktopSidebarSurface {
     background: var(--dsw-alias-bg-layer-1, #1a1a1a) !important;
   }

@@ -236,7 +236,6 @@ describe('proxy', () => {
       // Verify mobile adaptation code is injected
       expect(response.body).toContain('data-dsh-mobile');
       expect(response.body).toContain('isMobile');
-      expect(response.body).toContain('dsh-mobile-menu-btn');
       expect(response.body).toContain('hideDesktopOnlyNav');
 
       // Verify the CSS contains key mobile adaptations (inlined from MOBILE_CSS constant)
