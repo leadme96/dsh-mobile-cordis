@@ -376,6 +376,108 @@ if (!globalThis.__DSH_TRANSPORT__?.createApiClient) {
   // Also run on DOMContentLoaded and load events
   document.addEventListener('DOMContentLoaded', hideDesktopOnlyNav);
   window.addEventListener('load', hideDesktopOnlyNav);
+
+  // ===== Sidebar state detection =====
+  // Watch for sidebar collapse/expand to toggle chat visibility
+  function updateSidebarState() {
+    var frame = document.querySelector('[data-sidebar-collapsed]');
+    var isSidebarCollapsed = frame && frame.hasAttribute('data-sidebar-collapsed');
+    
+    if (isSidebarCollapsed) {
+      // Sidebar collapsed: show chat, hide sidebar drawer class
+      document.documentElement.classList.remove('dsh-mobile-sidebar-open');
+    } else {
+      // Sidebar expanded: show workspace, hide chat
+      document.documentElement.classList.add('dsh-mobile-sidebar-open');
+    }
+  }
+
+  // Initial check
+  updateSidebarState();
+
+  // Observe sidebar state changes
+  if (typeof MutationObserver !== 'undefined') {
+    var sidebarObserver = new MutationObserver(function() {
+      updateSidebarState();
+    });
+    
+    // Watch for attribute changes on the frame element
+    sidebarObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-sidebar-collapsed'],
+      subtree: true
+    });
+
+    // Also watch for the frame element itself being added
+    var frameObserver = new MutationObserver(function(mutations) {
+      for (var i = 0; i < mutations.length; i++) {
+        if (mutations[i].addedNodes.length > 0) {
+          updateSidebarState();
+          break;
+        }
+      }
+    });
+    
+    frameObserver.observe(document.body || document.documentElement, {
+      childList: true,
+      subtree: true
+    });
+
+    // Stop frame observer after 10 seconds
+    setTimeout(function() { frameObserver.disconnect(); }, 10000);
+  }
+
+  // Update on DOM ready
+  document.addEventListener('DOMContentLoaded', updateSidebarState);
+  window.addEventListener('load', updateSidebarState);
+
+  // ===== Mobile sidebar toggle button =====
+  function createToggleButton() {
+    if (document.getElementById('dsh-mobile-toggle-btn')) return;
+    
+    var btn = document.createElement('button');
+    btn.id = 'dsh-mobile-toggle-btn';
+    btn.setAttribute('aria-label', '切换工作区');
+    btn.setAttribute('title', '切换工作区');
+    btn.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>';
+    
+    btn.addEventListener('click', function() {
+      document.documentElement.classList.toggle('dsh-mobile-sidebar-open');
+      
+      // Also trigger the actual sidebar toggle in DSH if possible
+      var toggleBtn = document.querySelector('[data-sidebar-toggle], [aria-label*="sidebar" i], [aria-label*="侧边栏" i]');
+      if (toggleBtn && typeof toggleBtn.click === 'function') {
+        toggleBtn.click();
+      }
+    });
+    
+    document.body.appendChild(btn);
+  }
+
+  // Create toggle button when DOM is ready
+  if (document.body) {
+    createToggleButton();
+    createBackdrop();
+  } else {
+    document.addEventListener('DOMContentLoaded', function() {
+      createToggleButton();
+      createBackdrop();
+    });
+  }
+
+  // ===== Backdrop for sidebar drawer =====
+  function createBackdrop() {
+    if (document.getElementById('dsh-mobile-backdrop')) return;
+    
+    var backdrop = document.createElement('div');
+    backdrop.id = 'dsh-mobile-backdrop';
+    
+    backdrop.addEventListener('click', function() {
+      document.documentElement.classList.remove('dsh-mobile-sidebar-open');
+    });
+    
+    document.body.appendChild(backdrop);
+  }
 })();
 </script>
 `;
@@ -389,6 +491,8 @@ if (!globalThis.__DSH_TRANSPORT__?.createApiClient) {
  * Mobile-specific CSS for adapting the DSH Desktop UI to small screens.
  * - Collapses the 3-column grid into a single column
  * - Hides the sidebar by default (can be toggled)
+ * - When workspace is shown, hide chat content area
+ * - When session is selected / workspace collapsed, show chat normally
  * - Optimizes touch targets (min 44px)
  * - Adjusts font sizes and spacing
  * - Hides desktop-only features
@@ -433,6 +537,13 @@ html[data-dsh-mobile] .dshDesktopSidebarSurface {
 html[data-dsh-mobile].dsh-mobile-sidebar-open .dshDesktopSidebarSurface {
   transform: translateX(0) !important;
   box-shadow: 4px 0 24px rgba(0,0,0,0.15) !important;
+}
+
+/* ===== Workspace visible: hide chat content ===== */
+/* When sidebar is open (workspace visible), hide the conversation column */
+html[data-dsh-mobile].dsh-mobile-sidebar-open [data-slot="conversation"],
+html[data-dsh-mobile].dsh-mobile-sidebar-open .dshDesktopFrame > *:nth-child(2) {
+  display: none !important;
 }
 
 /* ===== Touch target optimization ===== */
@@ -531,5 +642,64 @@ html[data-dsh-mobile] [data-settings-section="diagnostics"] {
   html[data-dsh-mobile] .dshDesktopSidebarSurface {
     background: var(--dsw-alias-bg-layer-1, #1a1a1a) !important;
   }
+  
+  html[data-dsh-mobile] #dsh-mobile-toggle-btn {
+    background: var(--dsw-alias-bg-layer-2, #2a2a2a) !important;
+    color: var(--dsw-alias-fg-primary, #fff) !important;
+    border-color: var(--dsw-alias-border-l1, #404040) !important;
+  }
+}
+
+/* ===== Mobile sidebar toggle button ===== */
+html[data-dsh-mobile] #dsh-mobile-toggle-btn {
+  position: fixed !important;
+  bottom: 80px !important;
+  right: 16px !important;
+  width: 48px !important;
+  height: 48px !important;
+  border-radius: 50% !important;
+  background: var(--dsw-alias-bg-layer-1, #fff) !important;
+  border: 1px solid var(--dsw-alias-border-l1, #e5e7eb) !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  z-index: 10000 !important;
+  color: var(--dsw-alias-fg-primary, #1a1a1a) !important;
+  transition: transform 0.2s ease, box-shadow 0.2s ease !important;
+}
+
+html[data-dsh-mobile] #dsh-mobile-toggle-btn:hover {
+  transform: scale(1.05) !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2) !important;
+}
+
+html[data-dsh-mobile] #dsh-mobile-toggle-btn:active {
+  transform: scale(0.95) !important;
+}
+
+html[data-dsh-mobile] #dsh-mobile-toggle-btn svg {
+  width: 24px !important;
+  height: 24px !important;
+}
+
+/* ===== Sidebar backdrop ===== */
+html[data-dsh-mobile] #dsh-mobile-backdrop {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  background: rgba(0, 0, 0, 0.5) !important;
+  z-index: 9998 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transition: opacity 0.25s ease-out !important;
+}
+
+html[data-dsh-mobile].dsh-mobile-sidebar-open #dsh-mobile-backdrop {
+  opacity: 1 !important;
+  pointer-events: auto !important;
 }
 `;

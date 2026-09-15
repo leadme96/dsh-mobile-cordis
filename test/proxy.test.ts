@@ -245,6 +245,17 @@ describe('proxy', () => {
       expect(response.body).toContain('dsh-mobile-sidebar-width');
       expect(response.body).toContain('dsh-mobile-touch-target');
 
+      // Verify workspace/chat toggle CSS is present
+      expect(response.body).toContain('dsh-mobile-sidebar-open');
+      expect(response.body).toContain('dsh-mobile-toggle-btn');
+      expect(response.body).toContain('dsh-mobile-backdrop');
+
+      // Verify sidebar state detection JavaScript is present
+      expect(response.body).toContain('updateSidebarState');
+      expect(response.body).toContain('data-sidebar-collapsed');
+      expect(response.body).toContain('createToggleButton');
+      expect(response.body).toContain('createBackdrop');
+
       await new Promise<void>((resolve) => {
         htmlServer.close(() => resolve());
       });
