@@ -14,16 +14,20 @@ export function generatePin(): string {
 /**
  * Manages PIN persistence for mobile access authentication.
  * Stores PIN in $DSH_HOME/dsh-mobile/token with 0o600 permissions.
+ * Also manages enabled state persistence in $DSH_HOME/dsh-mobile/state.json.
  */
 export class SettingsManager {
   private readonly settingsDir: string;
   private readonly tokenPath: string;
+  private readonly statePath: string;
   private readonly customPin: string | undefined;
   private cachedPin: string | undefined;
+  private cachedEnabled: boolean | undefined;
 
   constructor(dshHome: string, customPin?: string) {
     this.settingsDir = join(dshHome, 'dsh-mobile');
     this.tokenPath = join(this.settingsDir, 'token');
+    this.statePath = join(this.settingsDir, 'state.json');
     this.customPin = customPin || undefined;
   }
 
@@ -60,6 +64,35 @@ export class SettingsManager {
     await this.savePin(pin);
     this.cachedPin = pin;
     return pin;
+  }
+
+  /**
+   * Get the persisted enabled state. Defaults to true if not set.
+   */
+  async getEnabled(): Promise<boolean> {
+    if (this.cachedEnabled !== undefined) {
+      return this.cachedEnabled;
+    }
+
+    try {
+      const data = await readFile(this.statePath, 'utf-8');
+      const state = JSON.parse(data);
+      this.cachedEnabled = typeof state.enabled === 'boolean' ? state.enabled : true;
+      return this.cachedEnabled;
+    } catch {
+      // File doesn't exist or invalid, default to true
+      this.cachedEnabled = true;
+      return true;
+    }
+  }
+
+  /**
+   * Save the enabled state to file.
+   */
+  async saveEnabled(enabled: boolean): Promise<void> {
+    await mkdir(this.settingsDir, { recursive: true });
+    await writeFile(this.statePath, JSON.stringify({ enabled }, null, 2), 'utf-8');
+    this.cachedEnabled = enabled;
   }
 
   /**

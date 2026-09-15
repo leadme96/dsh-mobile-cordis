@@ -117,6 +117,8 @@ dsh plugin install file:/path/to/dsh-mobile-cordis --profile desktop
 - 🟢 **绿色开关** = 服务已启用，可以扫码访问
 - 🔴 **红色开关** = 服务已禁用，停止代理服务
 
+**状态持久化**：开关状态会自动保存到 `$DSH_HOME/dsh-mobile/state.json`，重启 DSH Desktop 后会恢复上次的状态。
+
 ## 🔧 工作原理
 
 1. **反向代理**：插件在 `0.0.0.0:<port>` 上运行反向代理，转发请求到 `127.0.0.1:<upstreamPort>`
@@ -170,7 +172,7 @@ dsh-mobile-cordis/
 │   ├── index.ts        # 插件入口
 │   ├── proxy.ts        # 反向代理（HTTP + WebSocket）
 │   ├── service.ts      # 局域网 IP 检测 + 二维码生成
-│   └── settings.ts     # PIN 持久化
+│   └── settings.ts     # PIN 持久化 + 开关状态持久化
 ├── client/
 │   └── client.js       # 设置界面 UI
 ├── screenshots/        # 截图

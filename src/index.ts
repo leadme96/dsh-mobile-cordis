@@ -110,6 +110,9 @@ export function apply(ctx: Context, config: Config): void {
     hostCtx.effect(async () => {
       currentPin = await settingsManager.getPin();
 
+      // Load persisted enabled state (defaults to true)
+      manuallyEnabled = await settingsManager.getEnabled();
+
       // Auto-start proxy if manually enabled
       if (manuallyEnabled) {
         await startProxy(hostCtx);
@@ -206,6 +209,9 @@ export function apply(ctx: Context, config: Config): void {
         case 'toggle': {
           const { enabled } = payload as { enabled: boolean };
           manuallyEnabled = enabled;
+
+          // Persist the enabled state
+          await settingsManager.saveEnabled(enabled);
 
           if (enabled) {
             await startProxy(ctx);

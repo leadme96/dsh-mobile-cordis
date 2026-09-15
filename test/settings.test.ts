@@ -101,5 +101,67 @@ describe('settings', () => {
         expect(pin2).toBe(pin1);
       });
     });
+
+    describe('getEnabled', () => {
+      it('should default to true when no state file exists', async () => {
+        const enabled = await manager.getEnabled();
+        expect(enabled).toBe(true);
+      });
+
+      it('should return cached value on subsequent calls', async () => {
+        const enabled1 = await manager.getEnabled();
+        const enabled2 = await manager.getEnabled();
+        expect(enabled1).toBe(enabled2);
+      });
+    });
+
+    describe('saveEnabled', () => {
+      it('should persist enabled state to file', async () => {
+        await manager.saveEnabled(false);
+        const filePath = join(tempDir, 'dsh-mobile', 'state.json');
+        const content = await readFile(filePath, 'utf-8');
+        const state = JSON.parse(content);
+        expect(state.enabled).toBe(false);
+      });
+
+      it('should load saved state with new manager instance', async () => {
+        await manager.saveEnabled(false);
+        const newManager = new SettingsManager(tempDir);
+        const enabled = await newManager.getEnabled();
+        expect(enabled).toBe(false);
+      });
+
+      it('should toggle between true and false', async () => {
+        await manager.saveEnabled(false);
+        let enabled = await manager.getEnabled();
+        expect(enabled).toBe(false);
+
+        await manager.saveEnabled(true);
+        enabled = await manager.getEnabled();
+        expect(enabled).toBe(true);
+      });
+    });
+
+    describe('state persistence across restarts', () => {
+      it('should remember disabled state after restart', async () => {
+        // Simulate first run: user disables the proxy
+        await manager.saveEnabled(false);
+
+        // Simulate restart: new manager instance
+        const restartedManager = new SettingsManager(tempDir);
+        const enabled = await restartedManager.getEnabled();
+        expect(enabled).toBe(false);
+      });
+
+      it('should remember enabled state after restart', async () => {
+        // Explicitly enable
+        await manager.saveEnabled(true);
+
+        // Simulate restart
+        const restartedManager = new SettingsManager(tempDir);
+        const enabled = await restartedManager.getEnabled();
+        expect(enabled).toBe(true);
+      });
+    });
   });
 });
